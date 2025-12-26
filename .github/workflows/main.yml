@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      # 1. RDP Enable & Firewall Settings (Simplified)
+      # 1. RDP Enable & Firewall Settings
       - name: Enable RDP & Firewall
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
@@ -17,7 +17,7 @@ jobs:
           netsh advfirewall firewall set rule group="Remote Desktop" new enable=Yes
           Write-Host "RDP Enabled"
 
-      # 2. Create User (Fast & Secure)
+      # 2. Create User
       - name: Create User
         run: |
           $pass = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 16 | % {[char]$_})
@@ -27,22 +27,21 @@ jobs:
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
           echo "RDP_PASSWORD=$pass" >> $env:GITHUB_ENV
 
-      # 3. Install Tailscale (Silent)
+      # 3. Install Tailscale
       - name: Install Tailscale
         run: |
           Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "$env:TEMP\tailscale-setup.exe"
           Start-Process "$env:TEMP\tailscale-setup.exe" -ArgumentList "/quiet", "/norestart" -Wait
 
-      # 4. Connect Tailscale (Using YOUR NEW KEY)
+      # 4. Connect Tailscale (USING SECRET - NO LEAK)
       - name: Connect Tailscale
         run: |
-          # Aapki Nayi Key:
-          $Key = "tskey-auth-kkdX5Ayzw711CNTRL-3JLVgSnZj1Zjy6c4g1cE2ZRLC6kPoqdj"
+          # Yahan hum Secret use kar rahe hain
+          $Key = "${{ secrets.TAILSCALE_AUTHKEY }}"
           
-          # Connect command
           & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=$Key --hostname="gh-runner-$env:GITHUB_RUN_ID" --accept-routes --unattended
           
-          # Smart Wait Loop (Max 2 mins)
+          # Wait for IP (Max 2 mins)
           $tsIP = $null
           for ($i=1; $i -le 24; $i++) {
               $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
@@ -57,7 +56,7 @@ jobs:
       # 5. Send Credentials to n8n
       - name: Send to n8n
         run: |
-          # --- CHECK YOUR URL (Test vs Production) ---
+          # Verify your Webhook URL is correct
           $WebhookUrl = "https://65.1.91.110.nip.io/webhook-test/rdp"
           
           $body = @{
