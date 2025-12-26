@@ -9,18 +9,14 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      # 1. RDP aur Firewall Settings Enable karna
       - name: Enable RDP & Firewall
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
           netsh advfirewall firewall set rule group="Remote Desktop" new enable=Yes
-          Write-Host "RDP Enabled"
 
-      # 2. Secure User Create karna
       - name: Create User
         run: |
-          # Random strong password generate kar rahe hain
           $pass = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 16 | % {[char]$_})
           $securePass = ConvertTo-SecureString $pass -AsPlainText -Force
           New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
@@ -28,38 +24,41 @@ jobs:
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
           echo "RDP_PASSWORD=$pass" >> $env:GITHUB_ENV
 
-      # 3. Tailscale Install karna
       - name: Install Tailscale
         run: |
           Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "$env:TEMP\tailscale-setup.exe"
           Start-Process "$env:TEMP\tailscale-setup.exe" -ArgumentList "/quiet", "/norestart" -Wait
 
-      # 4. Tailscale Connect (Using Secret)
       - name: Connect Tailscale
         run: |
-          # Secret Key use kar rahe hain taaki revoke na ho
+          # Secret Key use kar rahe hain
           $Key = "${{ secrets.TAILSCALE_AUTHKEY }}"
-          
           & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=$Key --hostname="gh-runner-$env:GITHUB_RUN_ID" --accept-routes --unattended
           
-          # IP milne ka wait karega (Max 2 mins)
           $tsIP = $null
           for ($i=1; $i -le 24; $i++) {
               $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
               if ($tsIP) { break }
-              Write-Host "Waiting for IP... ($i/24)"
               Start-Sleep -Seconds 5
           }
-          
-          if (-not $tsIP) { Write-Error "Failed to get Tailscale IP"; exit 1 }
+          if (-not $tsIP) { exit 1 }
           echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
 
-      # 5. Credentials n8n ko bhejna (Production URL)
-      - name: Send to n8n
+      - name: Show Details in GitHub & Send to n8n
         run: |
-          # --- FINAL PRODUCTION URL ---
-          $WebhookUrl = "https://65.1.91.110.nip.io/webhook/rdp-credentials"
-          
+          # 1. GitHub Console me Show karna (Aapki Demand)
+          Write-Host " "
+          Write-Host "============================================="
+          Write-Host "       🖥️ RDP CREATED SUCCESSFULLY           "
+          Write-Host "============================================="
+          Write-Host "🌐 IP:       $env:TAILSCALE_IP"
+          Write-Host "👤 User:     RDP"
+          Write-Host "🔑 Pass:     $env:RDP_PASSWORD"
+          Write-Host "============================================="
+          Write-Host " "
+
+          # 2. n8n ko bhejna
+          $WebhookUrl = "https://65.1.91.110.nip.io/webhook-test/rdp-credentials"
           $body = @{
               user = "RDP"
               password = $env:RDP_PASSWORD
@@ -68,13 +67,10 @@ jobs:
           
           try {
             Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $body -ContentType "application/json"
-            Write-Host "Credentials Sent Successfully to n8n!"
           } catch {
-            Write-Error "Failed to send webhook: $_"
+            Write-Warning "Webhook failed but RDP is running."
           }
 
-      # 6. Session Active Rakhna
       - name: Keep Alive
         run: |
-          Write-Host "RDP Running... IP: $env:TAILSCALE_IP"
           while ($true) { Start-Sleep -Seconds 300 }
