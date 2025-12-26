@@ -58,7 +58,7 @@ jobs:
           Write-Host " "
 
           # 2. n8n ko bhejna
-          $WebhookUrl = "https://65.1.91.110.nip.io/webhook-test/rdp-credentials"
+          $WebhookUrl = "https://65.1.91.110.nip.io/webhook/rdp-credentials"
           $body = @{
               user = "RDP"
               password = $env:RDP_PASSWORD
